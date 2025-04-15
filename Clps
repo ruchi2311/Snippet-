@@ -1,0 +1,105 @@
+A function named collapse_cases_with_correlation is defined.
+
+It takes one argument args, which seems to be a dictionary or an object with keys like 'final_list', 'trans_dt', etc.
+
+The code inside is wrapped in a try block to handle exceptions if they arise.
+
+Extracting Arguments
+python
+Copy code
+        final_list = args['final_list']
+        trans_dt = args['trans_dt']
+        mkt_filter = args['mkt_filter']
+        collapse_from_cache = args['collapse_from_cache']
+        final_list_file = args['final_list_file']
+These lines extract individual parameters from the args dictionary:
+
+final_list: likely a DataFrame or similar structure.
+
+trans_dt: a date string.
+
+mkt_filter: a list of filters used for market/vendor filtering.
+
+collapse_from_cache: a boolean flag to determine if the final list should be read from a cached file.
+
+final_list_file: the file path to the cached file.
+
+Generate the Previous Day’s Date
+python
+Copy code
+        final_list_day = (pd.to_datetime(trans_dt) - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+Converts trans_dt to a datetime object.
+
+Subtracts 1 day to get the previous day.
+
+Formats it as 'YYYY-MM-DD' and stores it in final_list_day.
+
+Read from Cache If Enabled
+python
+Copy code
+        if collapse_from_cache:
+            final_list_file = './final_list.gzip'
+            final_list = pd.read_parquet(final_list_file)
+If collapse_from_cache is True, it overrides the file name to final_list.gzip.
+
+Then reads the Parquet file using pandas.read_parquet() into final_list.
+
+Market Filter Application
+python
+Copy code
+        if len(mkt_filter) == 1:
+            final_list = final_list[final_list.ENODEB.str.startswith(mkt_filter[0])]
+        else:
+            final_list = final_list[(final_list.ENODEB.str.startswith(mkt_filter[0])) | (final_list.ENODEB.str.startswith(mkt_filter[1]))]
+If there's only one item in mkt_filter, filter final_list where ENODEB column starts with that value.
+
+If more than one, apply an OR condition to filter where ENODEB starts with either of the first two values.
+
+Print Initial Case Counts
+python
+Copy code
+        print('Initial (uncollapsed) cases counts by Vendor')
+        print(final_list.groupby('VENDOR').ENODEB.count())
+Logs the number of rows per VENDOR in the final_list.
+
+Generate ‘cell id’ Column
+python
+Copy code
+        final_list['cell id'] = np.where(final_list.VENDOR == 'Ericsson',
+                                         final_list.ENODEB + '-' + final_list.CARRIERREF,
+                                         final_list.ENODEB + '-' + final_list.EUTRANCELL + final_list.CARRIER)
+Creates a new column cell id.
+
+If VENDOR is 'Ericsson', concatenate ENODEB and CARRIERREF with a -.
+
+Otherwise, concatenate ENODEB, EUTRANCELL, and CARRIER.
+
+Fix Missing DAY Values (Special Bug Handling)
+python
+Copy code
+        if len(final_list.DAY.unique()) > 1:
+            real_day = final_list_day
+            for day in final_list.DAY.unique():
+                if day is not None:
+                    real_day = day
+            final_list['DAY'] = np.where(final_list.DAY.isna(), real_day, final_list.DAY)
+        elif final_list.DAY.unique()[0] is None:
+            final_list['DAY'] = np.where(final_list.DAY.isna(), final_list_day, final_list.DAY)
+If there are multiple unique values in the DAY column:
+
+Initializes real_day with final_list_day.
+
+Iterates over the unique days, updating real_day if not None.
+
+Fills missing (NaN) values in DAY with real_day.
+
+If there's only one value and it is None, fills all missing DAY values with final_list_day.
+
+Let me know if you’d like me to help refactor or optimize this part next!
+
+
+
+
+
+
+
