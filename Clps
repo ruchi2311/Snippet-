@@ -98,6 +98,86 @@ If there's only one value and it is None, fills all missing DAY values with fina
 Let me know if you’d like me to help refactor or optimize this part next!
 
 
+In simple words:
+Serialize = Convert a Python object (like a dict, list, DataFrame, etc.) into a byte stream so it can be:
+
+Saved to a file
+
+Sent over a network
+
+Stored temporarily (like caching)
+
+Deserialize = Load it back from that byte stream to get the original object.
+
+Why use pickle?
+To save your objects to disk and reload them later.
+
+To pass complex data between processes (like in multiprocessing).
+
+To cache intermediate results so you don’t recompute again.
+
+Quick Example:
+python
+Copy code
+import pickle
+
+# Your Python object
+data = {'cell1': 'a,b', 'cell2': 'c,d'}
+
+# Save it to a file
+with open('data.pkl', 'wb') as f:
+    pickle.dump(data, f)
+
+# Load it later
+with open('data.pkl', 'rb') as f:
+    loaded_data = pickle.load(f)
+
+print(loaded_data)
+Where have you seen it?
+In your multiprocessing code, pickle is used behind the scenes to pass data between processes.
+
+Let me know if you want to see how to pickle/unpickle large DataFrames or use it in Databricks or Spark!
+
+
+
+
+
+
+
+You said:
+What is wb and rb in above code??
+
+
+ChatGPT said:
+Nice follow-up, Ruchi!
+
+In the context of pickle, the "wb" and "rb" in open() mean:
+
+"wb" = write binary
+Used when you're writing to a file.
+
+The b stands for binary mode (required by pickle).
+
+You use it like this:
+
+python
+Copy code
+with open('data.pkl', 'wb') as f:
+    pickle.dump(my_object, f)
+"rb" = read binary
+Used when you're reading a pickled file.
+
+Again, b is for binary mode.
+
+You use it like this:
+
+python
+Copy code
+with open('data.pkl', 'rb') as f:
+    loaded_object = pickle.load(f)
+Why binary (b)?
+Because pickle doesn't save human-readable text—it saves the byte stream version of your object. That's why text mode ("w" or "r") won't work.
+
 
 
 
