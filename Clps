@@ -1,185 +1,96 @@
-A function named collapse_cases_with_correlation is defined.
+start = time.time()
+final_list, collapsed_mains, removed_for_same_enb_carrier_high_prio = collapse_linked_cases(
+    final_list, merged_linked_cases_dict, prb_obj, args)
+end1 = time.time()
+start records the current time.
 
-It takes one argument args, which seems to be a dictionary or an object with keys like 'final_list', 'trans_dt', etc.
+collapse_linked_cases() is a custom function that processes the input list of PRB or interference cases (final_list) and groups or collapses them based on rules (defined in merged_linked_cases_dict and maybe prb_obj, which probably holds raw PRB data).
 
-The code inside is wrapped in a try block to handle exceptions if they arise.
+It returns:
 
-Extracting Arguments
+final_list: updated/processed records
+
+collapsed_mains: possibly records that were kept after collapsing
+
+removed_for_same_enb_carrier_high_prio: possibly filtered-out records based on rules like same eNB and carrier
+
+### Lines 141–142: Calculate and print time taken
 python
 Copy code
-        final_list = args['final_list']
-        trans_dt = args['trans_dt']
-        mkt_filter = args['mkt_filter']
-        collapse_from_cache = args['collapse_from_cache']
-        final_list_file = args['final_list_file']
-These lines extract individual parameters from the args dictionary:
+total_run_time = np.round((end1 - start)/60, 3)
+print("Finished collapse linked cases function taken {:.2f} minutes".format(total_run_time))
+Prints how long the collapse function took, converted from seconds to minutes.
 
-final_list: likely a DataFrame or similar structure.
-
-trans_dt: a date string.
-
-mkt_filter: a list of filters used for market/vendor filtering.
-
-collapse_from_cache: a boolean flag to determine if the final list should be read from a cached file.
-
-final_list_file: the file path to the cached file.
-
-Generate the Previous Day’s Date
+### Lines 144–147: Add debug columns
 python
 Copy code
-        final_list_day = (pd.to_datetime(trans_dt) - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-Converts trans_dt to a datetime object.
+final_list['num_affected_sites'] = final_list.apply(lambda row: get_num_affected_sites(row), axis=1)
+final_list['num_affected_cells'] = final_list.apply(lambda row: get_num_affected_cells(row), axis=1)
+You're adding two new columns:
 
-Subtracts 1 day to get the previous day.
+num_affected_sites: calculated using a custom function get_num_affected_sites(row)
 
-Formats it as 'YYYY-MM-DD' and stores it in final_list_day.
+num_affected_cells: similar logic for affected cells
 
-Read from Cache If Enabled
+These functions are likely defined earlier to count how many unique sites or cells are impacted by each record.
+
+### Lines 148–152: Save final results if flag is true
 python
 Copy code
-        if collapse_from_cache:
-            final_list_file = './final_list.gzip'
-            final_list = pd.read_parquet(final_list_file)
-If collapse_from_cache is True, it overrides the file name to final_list.gzip.
+store_collapsed_files = True
+if store_collapsed_files:
+    final_list.to_parquet('./final_list_new_collapse_corr90.gzip', compression='gzip')
+    collapsed_mains.to_parquet('./collapsed_mains_new_collapse_corr90.gzip', compression='gzip')
+    removed_for_same_enb_carrier_high_prio.to_parquet('./removed_for_same_enb_carrier_high_prio_new_collapse_corr90.gzip', compression='gzip')
+store_collapsed_files = True: sets a flag to save the results
 
-Then reads the Parquet file using pandas.read_parquet() into final_list.
+If true, saves all three DataFrames to .parquet format (a fast, columnar storage format), compressed using GZIP.
 
-Market Filter Application
+### Line 154: Reset index after collapsing
 python
 Copy code
-        if len(mkt_filter) == 1:
-            final_list = final_list[final_list.ENODEB.str.startswith(mkt_filter[0])]
-        else:
-            final_list = final_list[(final_list.ENODEB.str.startswith(mkt_filter[0])) | (final_list.ENODEB.str.startswith(mkt_filter[1]))]
-If there's only one item in mkt_filter, filter final_list where ENODEB column starts with that value.
+final_list.reset_index(inplace=True, drop=True)
+Removes old index and resets it (often done after filtering or row-wise operations).
 
-If more than one, apply an OR condition to filter where ENODEB starts with either of the first two values.
-
-Print Initial Case Counts
+### Lines 155–156: Print total execution time
 python
 Copy code
-        print('Initial (uncollapsed) cases counts by Vendor')
-        print(final_list.groupby('VENDOR').ENODEB.count())
-Logs the number of rows per VENDOR in the final_list.
+end1 = time.time()
+total_run_time = np.round((end1 - start)/60,3)
+print("Total time taken: {:.2f} minutes".format(total_run_time))
+Again captures the full time from beginning to now, including file saving and extra columns.
 
-Generate ‘cell id’ Column
+### Lines 157–159: Print shape and vendor stats
 python
 Copy code
-        final_list['cell id'] = np.where(final_list.VENDOR == 'Ericsson',
-                                         final_list.ENODEB + '-' + final_list.CARRIERREF,
-                                         final_list.ENODEB + '-' + final_list.EUTRANCELL + final_list.CARRIER)
-Creates a new column cell id.
+print("Final cases counts by Vendor")
+print(final_list.groupby('VENDOR').ENODEB.count())
+print("Collapse finished final_list shape:", final_list.shape)
+Prints how many cases remain grouped by VENDOR
 
-If VENDOR is 'Ericsson', concatenate ENODEB and CARRIERREF with a -.
+Shows final shape (rows x columns) of the final_list
 
-Otherwise, concatenate ENODEB, EUTRANCELL, and CARRIER.
-
-Fix Missing DAY Values (Special Bug Handling)
+### Line 161: Return final output
 python
 Copy code
-        if len(final_list.DAY.unique()) > 1:
-            real_day = final_list_day
-            for day in final_list.DAY.unique():
-                if day is not None:
-                    real_day = day
-            final_list['DAY'] = np.where(final_list.DAY.isna(), real_day, final_list.DAY)
-        elif final_list.DAY.unique()[0] is None:
-            final_list['DAY'] = np.where(final_list.DAY.isna(), final_list_day, final_list.DAY)
-If there are multiple unique values in the DAY column:
+return final_list, collapsed_mains, removed_for_same_enb_carrier_high_prio
+Returns all three DataFrames so they can be used later (e.g., for correlation or reporting).
 
-Initializes real_day with final_list_day.
-
-Iterates over the unique days, updating real_day if not None.
-
-Fills missing (NaN) values in DAY with real_day.
-
-If there's only one value and it is None, fills all missing DAY values with final_list_day.
-
-Let me know if you’d like me to help refactor or optimize this part next!
-
-
-In simple words:
-Serialize = Convert a Python object (like a dict, list, DataFrame, etc.) into a byte stream so it can be:
-
-Saved to a file
-
-Sent over a network
-
-Stored temporarily (like caching)
-
-Deserialize = Load it back from that byte stream to get the original object.
-
-Why use pickle?
-To save your objects to disk and reload them later.
-
-To pass complex data between processes (like in multiprocessing).
-
-To cache intermediate results so you don’t recompute again.
-
-Quick Example:
+### Lines 162–164: Error handling
 python
 Copy code
-import pickle
+except Exception as e:
+    ...
+Catches and prints any exception with file name, line number, and the object (prb_obj) causing the issue.
 
-# Your Python object
-data = {'cell1': 'a,b', 'cell2': 'c,d'}
+### In summary, this code:
+Starts a timer.
 
-# Save it to a file
-with open('data.pkl', 'wb') as f:
-    pickle.dump(data, f)
+Runs a collapse function to group or remove overlapping PRB issues.
 
-# Load it later
-with open('data.pkl', 'rb') as f:
-    loaded_data = pickle.load(f)
+Adds helpful debug columns.
 
-print(loaded_data)
-Where have you seen it?
-In your multiprocessing code, pickle is used behind the scenes to pass data between processes.
+Saves cleaned-up results to compressed files.
 
-Let me know if you want to see how to pickle/unpickle large DataFrames or use it in Databricks or Spark!
-
-
-
-
-
-
-
-You said:
-What is wb and rb in above code??
-
-
-ChatGPT said:
-Nice follow-up, Ruchi!
-
-In the context of pickle, the "wb" and "rb" in open() mean:
-
-"wb" = write binary
-Used when you're writing to a file.
-
-The b stands for binary mode (required by pickle).
-
-You use it like this:
-
-python
-Copy code
-with open('data.pkl', 'wb') as f:
-    pickle.dump(my_object, f)
-"rb" = read binary
-Used when you're reading a pickled file.
-
-Again, b is for binary mode.
-
-You use it like this:
-
-python
-Copy code
-with open('data.pkl', 'rb') as f:
-    loaded_object = pickle.load(f)
-Why binary (b)?
-Because pickle doesn't save human-readable text—it saves the byte stream version of your object. That's why text mode ("w" or "r") won't work.
-
-
-
-
-
+Reports total time and basic stats.
 
