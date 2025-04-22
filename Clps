@@ -94,3 +94,49 @@ Saves cleaned-up results to compressed files.
 
 Reports total time and basic stats.
 
+collapse_cases_with_correlation
+Chunking and Thread Preparation:
+
+If a limit is set, the enb_chunks list is prepared by splitting ENBs accordingly.
+
+thread_data is built, each entry containing args for processing PRB data in parallel.
+
+Multiprocessing:
+
+A multiprocessing pool is created and used to run link_cases_thread across chunks in thread_data.
+
+Results from all processes are collected in pool_results.
+
+Merging Results:
+
+The results are combined into a single dictionary merged_linked_cases_dict.
+
+PRB Object Setup:
+
+prb_obj is initialized to get PRB detector results.
+
+Main Processing:
+
+final_list is generated using collapse_linked_cases function.
+
+Duplicates are removed for same ENB-carrier-high PRIO.
+
+Post-processing:
+
+Adds two columns to final_list:
+
+num_all_affected_sites via get_num_affected_sites
+
+num_affected_cells via get_num_affected_cells
+
+Stores results to parquet if flag is True.
+
+Stats and Return:
+
+Prints counts grouped by VENDOR.
+
+Returns final_list and deduplicated rows.
+
+
+
+
