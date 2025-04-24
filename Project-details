@@ -1,0 +1,27 @@
+Based on the provided architecture diagram, data moves from on-premise systems to Google Cloud Platform (GCP) BigQuery through the following steps:
+1. Data Ingestion from On-Premise:
+Data from Verizon On-Prem systems, including sources like XLPT, ZITE, ATOLL, RTT, Kisview, and NO1, is ingested using NDL (Network Data Layer) Data Ingestion.
+2. Data Transfer to GCP:
+The ingested data is then transferred to NDL GCS (Google Cloud Storage) & BigQuery within the Google Cloud Platform.
+3. Data Processing in GCP:
+Raw Data Acquisition and Ingestion: The data lands in GCS/Hive for initial storage and processing.
+Core ETL & Correlation: Data undergoes extraction, transformation, and loading (ETL) processes, along with correlation, to prepare it for further analysis.
+AI/ML: Artificial intelligence and machine learning models are applied for advanced analytics.
+Aggregation and Loading: Data is aggregated and loaded for final insights and reporting.
+4. Final Insights and Visualization:
+Final insights and scores are stored, and tools like Grafana, Qlik, and VSON are used for visualization and performance monitoring.
+Ways to move on-premise data into GCP BigQuery: 
+Direct Transfer using NDL Data Ingestion:
+As shown in the architecture, NDL Data Ingestion facilitates direct transfer from on-premise to GCP.
+Google Cloud Storage (GCS) as an intermediary:
+Data can be first moved to GCS and then loaded into BigQuery. This approach is suitable for large datasets and batch processing.
+Cloud Interconnect or VPN:
+Securely connect on-premise infrastructure to GCP using Cloud Interconnect or VPN for data transfer.
+ETL tools:
+Utilize ETL tools to extract, transform, and load data from on-premise systems into BigQuery.
+BigQuery Data Transfer Service:
+This service allows automated data loading from various sources, including GCS, into BigQuery.
+Backup and Restore:
+Create a backup of the on-premise database and restore it in GCP.
+It's important to consider factors such as data volume, transfer frequency, security requirements, and network bandwidth when choosing a data transfer method.
+Highlighted text in image
