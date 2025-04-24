@@ -25,3 +25,17 @@ Backup and Restore:
 Create a backup of the on-premise database and restore it in GCP.
 It's important to consider factors such as data volume, transfer frequency, security requirements, and network bandwidth when choosing a data transfer method.
 Highlighted text in image
+
+NDL data ingestion service, as depicted in the provided diagram, is a component within a larger system architecture that facilitates the transfer of data from Verizon's on-premises infrastructure to Google Cloud Platform (GCP). It specifically handles the ingestion of data into NDL (likely an acronym for a specific data storage or processing system within Verizon), which then interfaces with Google Cloud Storage (GCS) and BigQuery for further processing and storage. 
+The process involves: 
+Data Source:
+Data originates from Verizon's on-premises systems, potentially including various network elements and data repositories.
+NDL Data Ingestion:
+This service is responsible for extracting, transforming, and loading (ETL) the data from the source systems into the NDL environment.
+NDL (GCS & BigQuery):
+The ingested data is then stored and managed within Google Cloud Platform, utilizing GCS for storage and BigQuery for data warehousing and analytics.
+Downstream Processing:
+The data in GCS and BigQuery is subsequently used for further processing, analysis, and the generation of insights and scores within the CEAM in GCP environment.
+CEAM in GCP:
+Cloud Extensibility and Application Modernization (CEAM) in Google Cloud Platform (GCP) is a strategy that involves migrating existing applications and infrastructure to the cloud or developing new cloud-native applications. It also includes modernizing applications to take advantage of cloud capabilities, such as scalability, flexibility, and cost-effectiveness.
+NDL data ingestion is critical for enabling data-driven decision-making and insights generation within the Verizon and Google Cloud ecosystem by ensuring the efficient and reliable transfer of data from on-premises systems to the cloud for further analysis and utilization. 
