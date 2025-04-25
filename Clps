@@ -1,42 +1,141 @@
-def test_with_real_data(csv_path):
-    """
-    Test components with real CSV data
-    """
-    # Get data from CSV
-    test_df = prepare_test_data_from_csv(csv_path)
-    
-    print("\n1. Testing memory reduction with real data:")
-    test_df = reduce_mem_usage(test_df)
-    
-    print("\n2. Testing filtering with real data:")
-    # Get unique ENODEB prefixes for testing
-    if len(test_df) > 0:
-        enodeb_samples = test_df['ENODEB'].astype(str).str[:3].unique()[:2]
-        if len(enodeb_samples) > 0:
-            mkt_filter = list(enodeb_samples)
-            print(f"Using market filters: {mkt_filter}")
-            
-            filter_condition = None
-            for filter_item in mkt_filter:
-                if filter_condition is None:
-                    filter_condition = test_df.ENODEB.str.startswith(filter_item)
-                else:
-                    filter_condition |= test_df.ENODEB.str.startswith(filter_item)
-            
-            filtered_df = test_df[filter_condition]
-            print(f"Filtered from {len(test_df)} to {len(filtered_df)} rows")
-    
-    print("\n3. Testing vectorized cell_id creation with real data:")
-    if 'VENDOR' in test_df.columns:
-        vendor_sample = test_df['VENDOR'].iloc[0] if not test_df.empty else 'Ericsson'
-        mask_vendor = test_df.VENDOR == vendor_sample
-        test_df.loc[mask_vendor, 'cell_id'] = (
-            test_df.loc[mask_vendor, 'SECTOR/CARRIERNAME'].astype(str) + "_" + 
-            test_df.loc[mask_vendor, 'ENODEB'].astype(str)
+def collapse_cases_with_correlation(args):
+    try:
+        import pandas as pd
+        import numpy as np
+        import time
+        import datetime
+        import sys
+        import os
+        import pickle
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+
+        # Unpack arguments
+        final_list = args['final_list']
+        trans_dt = args['trans_dt']
+        mkt_filter = args['mkt_filter']
+        collapse_from_cache = args['collapse_from_cache']
+        final_list_file = args['final_list_file']
+
+        final_list_day = (pd.to_datetime(trans_dt) - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+
+        if collapse_from_cache:
+            final_list = pd.read_parquet(final_list_file)
+
+        if mkt_filter:
+            filter_prefix = tuple(mkt_filter)
+            final_list = final_list[final_list.ENCODED.str.startswith(filter_prefix)]
+
+        print("Initial (uncollapsed) cases counts by Vendor")
+        print(final_list.groupby('VENDOR').ENCODED.count())
+
+        # Generate cell_id
+        is_ericsson = final_list.VENDOR == 'Ericsson'
+        final_list['cell_id'] = np.where(
+            is_ericsson,
+            final_list.ENCODED + "_" + final_list.SECTORCARRIERREF,
+            final_list.ENODEB + "_" + final_list.EUTRANCELL + final_list.CARRIER
         )
-        print(f"Created cell_id for {mask_vendor.sum()} rows with VENDOR={vendor_sample}")
-        if mask_vendor.sum() > 0:
-            print("Sample cell_id values:")
-            print(test_df.loc[mask_vendor, 'cell_id'].head())
-    
-    return test_df
+
+        # Correct missing DAY values
+        unique_days = final_list.DAY.dropna().unique()
+        real_day = unique_days[0] if len(unique_days) > 0 else final_list_day
+        final_list['DAY'] = final_list['DAY'].fillna(real_day)
+
+        # PRB data collection
+        start = time.time()
+        all_main_cells = final_list.cell_id.unique()
+        days_needed = 3
+        end_date = final_list.DAY.unique()[0]
+
+        print('Started collecting PRB data and collapsing branches')
+        prb_obj = periodic_prb_detector_v2.PrbPeriodDetector(all_main_cells, end_date, days_needed)
+
+        start_ts = datetime.datetime.now()
+        try:
+            prb_obj.get_prb_data(collapse_branches=True, markets=None)
+            if prb_obj.has_error:
+                print("PRB data error:", prb_obj.error_message)
+                sys.exit()
+        except Exception as e:
+            print("Error in PRB data fetch:", e)
+            sys.exit()
+
+        print("Completed getting PRB data")
+        print(f"PRB data load time: {prb_obj.proc_execution_time(start_ts)}")
+
+        prb_obj.load_prb_data()
+
+        # Threaded linking
+        thread_args = {
+            'run_corr': args['run_corr'],
+            'pass_prb_data_to_threads': args['pass_prb_data_to_threads']
+        }
+
+        thread_cnt = args['thread_cnt']
+        chunk_step = int(np.ceil(len(all_main_cells) / thread_cnt))
+        enb_chunks = [all_main_cells[i:i + chunk_step] for i in range(0, len(all_main_cells), chunk_step)]
+
+        if args.get('enb_cnt_limit'):
+            enb_chunks = [chunk[:args['enb_cnt_limit']] for chunk in enb_chunks]
+
+        thread_data = [{
+            'thread_args': thread_args,
+            'prb_data': prb_obj.batch_cells_prb_raw_df,
+            'final_list': final_list,
+            'cells_to_run': chunk,
+            'delay': 5 + 5 * i,
+            'args': args
+        } for i, chunk in enumerate(enb_chunks)]
+
+        print(f"Starting {len(thread_data)} threads")
+        start1 = time.time()
+        with mp.Pool(processes=len(thread_data)) as p:
+            pool_results = p.map(run_link_cases_threads, thread_data)
+
+        print(f"Threaded linking complete in {round((time.time() - start1) / 60, 3)} minutes")
+
+        # Merge thread results
+        merged_linked_cases_dict = {}
+        for cell in pool_results[0][0].keys():
+            links = pool_results[0][0][cell]
+            for result in pool_results[1:]:
+                for link in result[0][cell].split(','):
+                    if link not in links:
+                        links += f",{link}"
+            merged_linked_cases_dict[cell] = links
+
+        if args.get('save_merged_linked_cases_dict', True):
+            with open('merged_linked_cases_dict.pkl', 'wb') as f:
+                pickle.dump(merged_linked_cases_dict, f)
+
+        # Collapse cases
+        start1 = time.time()
+        final_list, collapsed_mains, removed_same_enb_carrier = collapse_linked_cases(
+            final_list, merged_linked_cases_dict, prb_obj, args
+        )
+        print(f"Collapse complete in {round((time.time() - start1)/60, 3)} minutes")
+
+        # Additional columns
+        final_list['num_all_affected_sites'] = final_list.apply(get_num_all_affected_sites, axis=1)
+        final_list['num_affected_cells'] = final_list.apply(get_num_affected_cells, axis=1)
+
+        # Save outputs
+        if args.get('store_collapsed_files', True):
+            final_list.to_parquet('./final_list_new_collapse_corr90.gzip', compression='gzip')
+            collapsed_mains.to_parquet('./collapsed_mains_new_collapse_corr90.gzip', compression='gzip')
+            removed_same_enb_carrier.to_parquet('./removed_for_same_enb_carrier_high_prio_new_collapse_corr90.gzip', compression='gzip')
+
+        final_list.reset_index(drop=True, inplace=True)
+
+        print(f"Total time: {round((time.time() - start)/60, 3)} minutes")
+        print("Final cases counts by Vendor")
+        print(final_list.groupby('VENDOR').ENCODED.count())
+        print(f"Collapse finished. final_list.shape: {final_list.shape}")
+
+        return final_list, collapsed_mains, removed_same_enb_carrier
+
+    except Exception as e:
+        import traceback
+        print("Exception occurred:\n", traceback.format_exc())
+        raise
