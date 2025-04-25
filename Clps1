@@ -96,6 +96,48 @@ print("Collapsed Results:")
 for row in collapsed_result:
     print(row)
 
+new
+
+import pandas as pd
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
+import time
+
+# Step 1: Start Spark session
+spark = SparkSession.builder.appName("CollapseCorrelation").getOrCreate()
+
+# Step 2: Load your sample CSV
+csv_path = "sample_data.csv"  # Update if needed
+df = spark.read.option("header", True).csv(csv_path, inferSchema=True)
+
+# Step 3: Define a basic version of the collapse_cases_with_correlation function
+def collapse_cases_with_correlation(
+    trans_df,
+    trans_dt,
+    cell_id="SECTOR_ID",
+    prb_column="PRB_UTILIZATION",
+    enb_column="ENB_ID",
+    day_column="DAY",
+):
+    start_time = time.time()
+
+    # Cast columns
+    trans_df = trans_df.withColumn(day_column, col(day_column).cast("string"))
+    trans_df = trans_df.withColumn(cell_id, col(cell_id).cast("string"))
+
+    # Filter out null days
+    trans_df = trans_df.filter(col(day_column).isNotNull())
+
+    real_day = str(trans_dt)
+
+    print(f"[INFO] Day selected: {real_day}")
+    trans_df.show()
+
+    print(f"Step 1 completed in {round(time.time() - start_time, 2)} seconds.")
+    return trans_df
+
+# Step 4: Call the function with your test data
+collapse_cases_with_correlation(df, trans_dt="2024-04-01")
 
 
 
