@@ -1,143 +1,53 @@
-# Step 1: Import and start Spark
-from pyspark.sql import SparkSession
-
-spark = SparkSession.builder \
-    .appName("CollapseCasesTest") \
-    .getOrCreate()
-
-# Step 2: Load the CSV
-input_df = spark.read.option("header", True).csv("sample_input.csv", inferSchema=True)
-input_df.show()
-
-# Step 3: Dummy helper functions
 import pandas as pd
-import time
-from pyspark.sql.functions import lit
 
-def get_prb_data(trans_df, real_day, cell_id, prb_column='PRB_UTILIZATION'):
-    df = trans_df.toPandas()
-    return {cell: list(df[df[cell_id] == cell][prb_column]) for cell in df[cell_id].unique()}
+# Step 1: Reading your CSV
+final_list = pd.read_csv('final_list.csv')
 
-def run_link_threads(enb_subset, prb_dict, cell_id, real_day):
-    return {enb: [(enb, prb_dict.get(enb, []))] for enb in enb_subset}
+print("Step 1 - CSV Loaded:")
+print(final_list.head())
+print("\nShape of final_list:", final_list.shape)
 
-def collapse(filtered_data):
-    collapsed_list = []
-    for enb, records in filtered_data.items():
-        for record in records:
-            collapsed_list.append({
-                "ENB_ID": record[0],
-                "PRB_AVG": sum(record[1]) / len(record[1]) if record[1] else 0
-            })
-    return collapsed_list
+# Step 2: Create args dictionary
+args = {
+    'final_list': final_list,
+    'trans_dt': '2025-04-20',
+    'mkt_filter': [],
+    'collapse_from_cache': False,
+    'final_list_file': '',
+    'run_corr': True,
+    'pass_prb_data_to_threads': True,
+    'thread_cnt': 2,
+    'save_merged_linked_cases_dict': False,
+    'store_collapsed_files': False
+}
 
-optimised function 
+# Step 3.1: Market filter
+if args.get('mkt_filter'):
+    print(f"Applying market filter: {args['mkt_filter']}")
+    final_list = final_list[final_list['MKT'].isin(args['mkt_filter'])]
+else:
+    print("No market filter applied")
 
-def collapse_cases_with_correlation(
-    trans_df,
-    trans_dt,
-    collapse_from_cache=False,
-    mkt_filter=[],
-    cell_id="SECTOR_ID",
-    prb_column="PRB_UTILIZATION",
-    enb_column="ENB_ID",
-    day_column="DAY",
-    collapse_output_loc=None,
-    raw_output_loc=None,
-    metrics_output_loc=None,
-):
-    start_time = time.time()
-    
-    trans_df = trans_df.withColumn(day_column, trans_df[day_column].cast("string"))
-    trans_df = trans_df.withColumn(cell_id, trans_df[cell_id].cast("string"))
+print("Step 3.1 - After market filter:")
+print(final_list.head())
+print("\nShape of final_list:", final_list.shape)
 
-    trans_df = trans_df.filter(trans_df[day_column].isNotNull())
-    real_day = str(trans_dt)
+# Step 3.2: Create 'cell_id'
+if 'cell_id' not in final_list.columns:
+    final_list['cell_id'] = final_list['ecgi'].astype(str) + '_' + final_list['sector_id'].astype(str)
+    print("'cell_id' column created.")
+else:
+    print("'cell_id' column already exists.")
 
-    if mkt_filter:
-        trans_df = trans_df.filter(trans_df["MARKET_NAME"].isin(mkt_filter))
+print("Step 3.2 - After creating 'cell_id':")
+print(final_list[['ecgi', 'sector_id', 'cell_id']].head())
 
-    trans_df = trans_df.withColumn(cell_id, trans_df[cell_id].cast("string"))
+# Step 3.3: Fix 'DAY' column
+if 'DAY' not in final_list.columns or final_list['DAY'].isnull().all():
+    final_list['DAY'] = args['trans_dt']
 
-    prb_dict = get_prb_data(trans_df, real_day, cell_id, prb_column)
-
-    enb_subset = list(set(trans_df.select(enb_column).rdd.flatMap(lambda x: x).collect()))
-
-    filtered_data = run_link_threads(enb_subset, prb_dict, cell_id, real_day)
-
-    result = collapse(filtered_data)
-
-    for item in result:
-        item[day_column] = real_day
-        item["TOTAL"] = 1
-
-    result_df = spark.createDataFrame(pd.DataFrame(result))
-
-    if collapse_output_loc:
-        result_df.write.mode("overwrite").parquet(collapse_output_loc)
-
-    print(f"Collapse completed in {round(time.time() - start_time, 2)} seconds.")
-    return result
-
-run the function 
-
-collapsed_result = collapse_cases_with_correlation(
-    trans_df=input_df,
-    trans_dt="2024-04-01",  # You can also try "2024-04-02"
-    collapse_from_cache=False,
-    mkt_filter=[],  # Add filter if needed
-    cell_id="SECTOR_ID",
-    prb_column="PRB_UTILIZATION",
-    enb_column="ENB_ID",
-    day_column="DAY"
-)
-
-print("Collapsed Results:")
-for row in collapsed_result:
-    print(row)
-
-new
-
-import pandas as pd
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-import time
-
-# Step 1: Start Spark session
-spark = SparkSession.builder.appName("CollapseCorrelation").getOrCreate()
-
-# Step 2: Load your sample CSV
-csv_path = "sample_data.csv"  # Update if needed
-df = spark.read.option("header", True).csv(csv_path, inferSchema=True)
-
-# Step 3: Define a basic version of the collapse_cases_with_correlation function
-def collapse_cases_with_correlation(
-    trans_df,
-    trans_dt,
-    cell_id="SECTOR_ID",
-    prb_column="PRB_UTILIZATION",
-    enb_column="ENB_ID",
-    day_column="DAY",
-):
-    start_time = time.time()
-
-    # Cast columns
-    trans_df = trans_df.withColumn(day_column, col(day_column).cast("string"))
-    trans_df = trans_df.withColumn(cell_id, col(cell_id).cast("string"))
-
-    # Filter out null days
-    trans_df = trans_df.filter(col(day_column).isNotNull())
-
-    real_day = str(trans_dt)
-
-    print(f"[INFO] Day selected: {real_day}")
-    trans_df.show()
-
-    print(f"Step 1 completed in {round(time.time() - start_time, 2)} seconds.")
-    return trans_df
-
-# Step 4: Call the function with your test data
-collapse_cases_with_correlation(df, trans_dt="2024-04-01")
+print("Step 3.3 - After fixing 'DAY' column:")
+print(final_list[['DAY']].drop_duplicates())
 
 
 
